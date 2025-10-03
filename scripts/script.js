@@ -8,6 +8,7 @@
  * - Choices overlay; affects state
  * - Dev console overlay with jump/inspect hooks
  * - Visual polish: theme toggle, title particles, parallax
+ * - Story select: choose route from title screen
  */
 
 const $ = (sel) => document.querySelector(sel);
@@ -139,6 +140,33 @@ const Scenes = {
       { name: "System", text: "Demo complete. Replay from the title screen?", end: true },
     ],
   }
+};
+
+/* Additional scenes for Festival route */
+Scenes.fest1 = {
+  id: "fest1",
+  bg: "assets/images/bg/bg_classroom.png",
+  portrait: "assets/images/char/char_a.png",
+  music: null,
+  lines: [
+    { name: "Narrator", text: "The school festival is in full swing. Laughter echoes across the courtyard." },
+    { name: "Alex", text: "Looks like everyone's here. Where should I start?" },
+    { type: "choice", prompt: "First stop?", options: [
+      { text: "Try the food stalls", set: { festFood: true }, next: "fest2" },
+      { text: "Visit the game booths", set: { festFood: false }, next: "fest2" },
+    ]},
+  ],
+};
+Scenes.fest2 = {
+  id: "fest2",
+  bg: "assets/images/bg/bg_classroom.png",
+  portrait: "assets/images/char/char_b.png",
+  music: null,
+  lines: [
+    { name: "Taylor", text: (state) => state.flags.festFood ? "You caught the chef's special? Save me a bite!" : "Beat the high score already? Show-off." },
+    { name: "Narrator", text: "As the sun dips, the festival lights brighten. A memorable day draws to a close." },
+    { name: "System", text: "Festival route complete. Return to title?", end: true },
+  ],
 };
 
 /* Title Screen initialization */
@@ -496,6 +524,52 @@ function setupParallax() {
   });
 }
 
+/* Story selection */
+const Routes = [
+  { id: "route_morning", title: "Morning Routine", description: "Start at home and decide your path to class.", startScene: "scene1" },
+  { id: "route_festival", title: "Festival Day", description: "Begin at the school festival with new choices.", startScene: "fest1" },
+];
+
+/* Title: story select overlay handling */
+function openStorySelect() {
+  const list = document.getElementById("story-list");
+  list.innerHTML = "";
+  Routes.forEach((r) => {
+    const item = document.createElement("div");
+    item.className = "story-item";
+    const info = document.createElement("div");
+    const title = document.createElement("h4");
+    title.textContent = r.title;
+    const desc = document.createElement("p");
+    desc.textContent = r.description;
+    info.appendChild(title);
+    info.appendChild(desc);
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    const startBtn = document.createElement("button");
+    startBtn.className = "secondary small";
+    startBtn.textContent = "Start";
+    startBtn.addEventListener("click", () => startRoute(r));
+    actions.appendChild(startBtn);
+    item.appendChild(info);
+    item.appendChild(actions);
+    list.appendChild(item);
+  });
+  showOverlay(document.getElementById("story-select"));
+}
+function closeStorySelect() {
+  hideOverlay(document.getElementById("story-select"));
+}
+function startRoute(route) {
+  clearSave();
+  Engine.sceneId = route.startScene;
+  Engine.lineIndex = 0;
+  Engine.flags = {};
+  Engine.seenScenes = new Set();
+  closeStorySelect();
+  enterGame();
+}
+
 /* Event wiring */
 document.addEventListener("DOMContentLoaded", () => {
   loadSettings();
@@ -505,6 +579,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   continueBtn.addEventListener("click", continueGame);
   newGameBtn.addEventListener("click", startNewGame);
+
+  document.getElementById("storyselect-btn")?.addEventListener("click", openStorySelect);
+  document.getElementById("storyselect-close")?.addEventListener("click", closeStorySelect);
 
   themeToggleBtn?.addEventListener("click", () => {
     applyTheme(Engine.theme === "light" ? "dark" : "light");

@@ -270,6 +270,43 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   overflow: auto;
 }
 
+/* Story select */
+.story-panel {
+  width: min(720px, 92vw);
+  background: var(--panel-solid);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  padding: 18px;
+  box-shadow: 0 18px 40px rgba(0,0,0,0.4);
+}
+#story-list {
+  display: grid;
+  gap: 12px;
+}
+.story-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 10px;
+  background: var(--panel);
+  backdrop-filter: blur(6px);
+}
+.story-item h4 {
+  margin: 0;
+}
+.story-item p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.story-item .actions {
+  display: flex;
+  gap: 8px;
+}
+
 /* Animations */
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(8px); }

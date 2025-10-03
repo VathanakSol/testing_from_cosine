@@ -20,6 +20,7 @@
         <div class="menu">
           <button id="continue-btn" class="primary" disabled>Continue</button>
           <button id="newgame-btn" class="secondary">Start New Game</button>
+          <button id="storyselect-btn" class="secondary">Choose Story</button>
           <button id="theme-toggle" class="link small" aria-label="Toggle Theme">Toggle Theme</button>
         </div>
       </div>
@@ -54,6 +55,17 @@
         <h3>Make a choice</h3>
         <div id="choices-container"></div>
         <button id="choices-cancel" class="link small hidden">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Story Select Overlay -->
+    <div id="story-select" class="overlay hidden">
+      <div class="story-panel">
+        <div class="dev-header">
+          <h3>Select a Story</h3>
+          <button id="storyselect-close" class="link">Close</button>
+        </div>
+        <div id="story-list"></div>
       </div>
     </div>
 
