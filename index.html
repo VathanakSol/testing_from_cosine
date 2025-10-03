@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -14,11 +14,13 @@
   <div id="app">
     <!-- Title Screen -->
     <div id="title-screen" class="screen active">
+      <canvas id="title-particles"></canvas>
       <div class="title-content">
         <h1 class="game-title">Cosine VN Engine</h1>
         <div class="menu">
           <button id="continue-btn" class="primary" disabled>Continue</button>
           <button id="newgame-btn" class="secondary">Start New Game</button>
+          <button id="theme-toggle" class="link small" aria-label="Toggle Theme">Toggle Theme</button>
         </div>
       </div>
     </div>
@@ -32,6 +34,7 @@
         <img id="portrait-image" alt="Portrait" />
         <audio id="bgm" loop></audio>
         <div id="wipe-overlay"></div>
+        <div id="vignette"></div>
       </div>
 
       <div id="dialogue-layer" class="click-advance">
