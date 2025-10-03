@@ -7,16 +7,20 @@
  * - Optional BGM with mute toggle (top-left)
  * - Choices overlay; affects state
  * - Dev console overlay with jump/inspect hooks
+ * - Visual polish: theme toggle, title particles, parallax
+ * - Story select: choose route from title screen
  */
 
 const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+const $ = (sel) => Array.from(document.querySelectorAll(sel));
 
 /* DOM refs */
 const titleScreen = $("#title-screen");
 const continueBtn = $("#continue-btn");
 const newGameBtn = $("#newgame-btn");
+const themeToggleBtn = $("#theme-toggle");
 const devToggleBtn = $("#devconsole-toggle");
+const titleParticlesCanvas = $("#title-particles");
 
 const gameScreen = $("#game-screen");
 const bgImage = $("#bg-image");
@@ -53,17 +57,24 @@ const Engine = {
   textBuffer: "",
   flags: {}, // choice flags or conditions
   seenScenes: new Set(),
+  theme: "light",
 };
 
+/* Settings */
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme || "light");
+  Engine.theme = theme || "light";
+}
 function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
     if (typeof s.muted === "boolean") bgm.muted = s.muted;
+    if (s.theme) applyTheme(s.theme);
   } catch {}
   updateMuteIcon();
 }
 function saveSettings() {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ muted: bgm.muted }));
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ muted: bgm.muted, theme: Engine.theme }));
 }
 
 function hasSave() {
@@ -131,11 +142,39 @@ const Scenes = {
   }
 };
 
+/* Additional scenes for Festival route */
+Scenes.fest1 = {
+  id: "fest1",
+  bg: "assets/images/bg/bg_classroom.png",
+  portrait: "assets/images/char/char_a.png",
+  music: null,
+  lines: [
+    { name: "Narrator", text: "The school festival is in full swing. Laughter echoes across the courtyard." },
+    { name: "Alex", text: "Looks like everyone's here. Where should I start?" },
+    { type: "choice", prompt: "First stop?", options: [
+      { text: "Try the food stalls", set: { festFood: true }, next: "fest2" },
+      { text: "Visit the game booths", set: { festFood: false }, next: "fest2" },
+    ]},
+  ],
+};
+Scenes.fest2 = {
+  id: "fest2",
+  bg: "assets/images/bg/bg_classroom.png",
+  portrait: "assets/images/char/char_b.png",
+  music: null,
+  lines: [
+    { name: "Taylor", text: (state) => state.flags.festFood ? "You caught the chef's special? Save me a bite!" : "Beat the high score already? Show-off." },
+    { name: "Narrator", text: "As the sun dips, the festival lights brighten. A memorable day draws to a close." },
+    { name: "System", text: "Festival route complete. Return to title?", end: true },
+  ],
+};
+
 /* Title Screen initialization */
 function updateTitleScreen() {
   titleScreen.classList.add("active");
   gameScreen.classList.remove("active");
   continueBtn.disabled = !hasSave();
+  startTitleParticles();
 }
 function goToTitle() {
   stopBgm();
@@ -144,6 +183,7 @@ function goToTitle() {
   titleScreen.classList.add("active");
   gameScreen.classList.remove("active");
   continueBtn.disabled = !hasSave();
+  startTitleParticles();
 }
 
 /* Scene rendering */
@@ -161,6 +201,7 @@ async function continueGame() {
 }
 
 async function enterGame() {
+  stopTitleParticles();
   titleScreen.classList.remove("active");
   gameScreen.classList.add("active");
   await showScene(Engine.sceneId, { wipe: true, fromStart: Engine.lineIndex === 0 });
@@ -174,10 +215,8 @@ function setBackground(src) {
 function setPortrait(src) {
   if (src) {
     portraitImage.src = src;
-    // prepare for fade-in
     portraitImage.classList.remove("show");
     portraitImage.style.display = "block";
-    // allow layout to apply before adding show (opacity transition)
     requestAnimationFrame(() => {
       portraitImage.classList.add("show");
     });
@@ -213,7 +252,6 @@ async function wipeTransition() {
   await new Promise((res) => {
     const handler = () => { wipeOverlay.removeEventListener("animationend", handler); res(); };
     wipeOverlay.addEventListener("animationend", handler, { once: true });
-    // trigger by forcing reflow then adding class is done via parent 'wiping'
   });
   gameScreen.classList.remove("wiping");
 }
@@ -225,24 +263,17 @@ async function showScene(id, { wipe = true, fromStart = true } = {}) {
   Engine.seenScenes.add(id);
   if (fromStart) Engine.lineIndex = 0;
 
-  // Set bg immediately, hide portrait until wipe is done
   setBackground(scene.bg);
   const portraitSrc = scene.portrait;
 
-  // Begin wipe
   if (wipe) {
     setPortrait(null);
-    await nextAnimationFrame(); // ensure DOM applied
+    await nextAnimationFrame();
     await wipeTransition();
   }
 
-  // Mount portrait after the wipe completes
   setPortrait(portraitSrc);
-
-  // Start BGM if any
   await playLoopIfAny(scene.music);
-
-  // Begin dialogue
   await runDialogueLoop(scene);
 }
 
@@ -250,7 +281,6 @@ async function runDialogueLoop(scene) {
   while (Engine.sceneId === scene.id && Engine.lineIndex < scene.lines.length) {
     const entry = scene.lines[Engine.lineIndex];
 
-    // Choice entry
     if (entry && entry.type === "choice") {
       await presentChoice(entry);
       Engine.lineIndex++;
@@ -258,7 +288,6 @@ async function runDialogueLoop(scene) {
       continue;
     }
 
-    // End entry (show prompt and return to title)
     if (entry && entry.end) {
       await typeLine(entry.name || null, entry.text);
       await waitForAdvance();
@@ -266,7 +295,6 @@ async function runDialogueLoop(scene) {
       return;
     }
 
-    // Standard line
     const name = entry.name || null;
     const text = typeof entry.text === "function" ? entry.text(Engine) : entry.text;
     await typeLine(name, text);
@@ -276,38 +304,31 @@ async function runDialogueLoop(scene) {
     saveGame();
   }
 
-  // Scene finished; for demo, go to title
   goToTitle();
 }
 
 /* Typing system */
 function setNameTag(maybe) {
-  // external name tag no longer used; keep hidden
   nameTag.style.display = "none";
 }
 
 async function typeLine(name, text) {
-  // Speaker inside dialogue box (bold, colored)
   dialogueSpeaker.textContent = name ? String(name) : "";
   dialogueSpeaker.style.display = name ? "block" : "none";
 
-  // Prepare state
   const full = String(text);
   dialogueText.textContent = "";
   dialogueBox.classList.remove("ready");
   Engine.typing = true;
 
-  // Ensure skip-to-full works immediately on first click
   const skipHandler = () => {
     if (Engine.typing) {
       Engine.typing = false;
       dialogueText.textContent = full;
     }
   };
-  // Use capture to ensure it runs even if descendants stop propagation
   dialogueBox.addEventListener("click", skipHandler, { capture: true, once: true });
 
-  // Type loop
   const chars = [...full];
   for (let i = 0; i < chars.length; i++) {
     if (!Engine.typing) break;
@@ -315,7 +336,6 @@ async function typeLine(name, text) {
     await delay(Engine.typeSpeed);
   }
 
-  // Finalize
   if (!Engine.typing) {
     dialogueText.textContent = full;
   }
@@ -326,10 +346,7 @@ async function typeLine(name, text) {
 function waitForAdvance() {
   return new Promise((resolve) => {
     const finishTyping = () => {
-      // force full text to appear immediately
       Engine.typing = false;
-      // dialogueText is filled by typeLine loop on next tick, but ensure here too:
-      // no-op here; typeLine checks Engine.typing and sets full text.
     };
     const proceed = () => {
       cleanup();
@@ -348,7 +365,6 @@ function waitForAdvance() {
         handler();
       }
     };
-    // Attach listeners directly on the dialogue box to guarantee clicks register
     const clickHandler = (e) => {
       if (e.target.closest("#dialogue-box")) {
         handler();
@@ -367,20 +383,17 @@ function waitForAdvance() {
 function presentChoice(entry) {
   return new Promise((resolve) => {
     choicesContainer.innerHTML = "";
-    entry.options.forEach((opt, i) => {
+    entry.options.forEach((opt) => {
       const btn = document.createElement("button");
       btn.className = "choice-btn";
       btn.textContent = opt.text;
       btn.addEventListener("click", () => {
-        // apply state mutation
         if (opt.set) Object.assign(Engine.flags, opt.set);
-        // go to next scene if specified
         if (opt.next && Scenes[opt.next]) {
           Engine.sceneId = opt.next;
           Engine.lineIndex = 0;
           saveGame();
           hideOverlay(choicesOverlay);
-          // Show next scene with wipe
           showScene(opt.next, { wipe: true, fromStart: true }).then(resolve);
           return;
         }
@@ -390,7 +403,7 @@ function presentChoice(entry) {
       choicesContainer.appendChild(btn);
     });
 
-    choicesCancelBtn.classList.add("hidden"); // not used now, but structured
+    choicesCancelBtn.classList.add("hidden");
     showOverlay(choicesOverlay);
   });
 }
@@ -428,8 +441,133 @@ function renderDevState() {
     seenScenes: Array.from(Engine.seenScenes),
     hasSave: hasSave(),
     muted: bgm.muted,
+    theme: Engine.theme,
   };
   devState.textContent = JSON.stringify(snapshot, null, 2);
+}
+
+/* Title particles */
+let particleRAF = null;
+let particles = [];
+function startTitleParticles() {
+  if (!titleParticlesCanvas) return;
+  resizeParticlesCanvas();
+  particles = createParticles(40);
+  if (particleRAF) cancelAnimationFrame(particleRAF);
+  const ctx = titleParticlesCanvas.getContext("2d");
+  function step() {
+    ctx.clearRect(0, 0, titleParticlesCanvas.width, titleParticlesCanvas.height);
+    particles.forEach((p) => {
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < -p.r) p.x = titleParticlesCanvas.width + p.r;
+      if (p.x > titleParticlesCanvas.width + p.r) p.x = -p.r;
+      if (p.y < -p.r) p.y = titleParticlesCanvas.height + p.r;
+      if (p.y > titleParticlesCanvas.height + p.r) p.y = -p.r;
+      ctx.globalAlpha = p.alpha;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = "#fde68a";
+      ctx.fill();
+    });
+    particleRAF = requestAnimationFrame(step);
+  }
+  step();
+  window.addEventListener("resize", resizeParticlesCanvas);
+}
+function stopTitleParticles() {
+  if (particleRAF) {
+    cancelAnimationFrame(particleRAF);
+    particleRAF = null;
+  }
+  window.removeEventListener("resize", resizeParticlesCanvas);
+  if (titleParticlesCanvas) {
+    const ctx = titleParticlesCanvas.getContext("2d");
+    ctx.clearRect(0, 0, titleParticlesCanvas.width, titleParticlesCanvas.height);
+  }
+}
+function resizeParticlesCanvas() {
+  if (!titleParticlesCanvas) return;
+  titleParticlesCanvas.width = titleScreen.clientWidth;
+  titleParticlesCanvas.height = titleScreen.clientHeight;
+}
+function createParticles(n) {
+  const arr = [];
+  for (let i = 0; i < n; i++) {
+    arr.push({
+      x: Math.random() * titleParticlesCanvas.width,
+      y: Math.random() * titleParticlesCanvas.height,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: (Math.random() - 0.5) * 0.3,
+      r: 1 + Math.random() * 2.5,
+      alpha: 0.25 + Math.random() * 0.5,
+    });
+  }
+  return arr;
+}
+
+/* Parallax */
+function setupParallax() {
+  const maxBg = 6;      // px
+  const maxPortrait = 8; // px
+  gameScreen.addEventListener("mousemove", (e) => {
+    const rect = gameScreen.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dx = (e.clientX - cx) / (rect.width / 2);
+    const dy = (e.clientY - cy) / (rect.height / 2);
+    bgImage.style.transform = `translate(${(-dx * maxBg).toFixed(2)}px, ${(-dy * maxBg).toFixed(2)}px)`;
+    portraitImage.style.transform = `translate(calc(-50% + ${ (dx * maxPortrait).toFixed(2)}px), ${ (dy * maxPortrait).toFixed(2)}px)`;
+  });
+  gameScreen.addEventListener("mouseleave", () => {
+    bgImage.style.transform = "translate(0, 0)";
+    portraitImage.style.transform = "translateX(-50%)";
+  });
+}
+
+/* Story selection */
+const Routes = [
+  { id: "route_morning", title: "Morning Routine", description: "Start at home and decide your path to class.", startScene: "scene1" },
+  { id: "route_festival", title: "Festival Day", description: "Begin at the school festival with new choices.", startScene: "fest1" },
+];
+
+/* Title: story select overlay handling */
+function openStorySelect() {
+  const list = document.getElementById("story-list");
+  list.innerHTML = "";
+  Routes.forEach((r) => {
+    const item = document.createElement("div");
+    item.className = "story-item";
+    const info = document.createElement("div");
+    const title = document.createElement("h4");
+    title.textContent = r.title;
+    const desc = document.createElement("p");
+    desc.textContent = r.description;
+    info.appendChild(title);
+    info.appendChild(desc);
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    const startBtn = document.createElement("button");
+    startBtn.className = "secondary small";
+    startBtn.textContent = "Start";
+    startBtn.addEventListener("click", () => startRoute(r));
+    actions.appendChild(startBtn);
+    item.appendChild(info);
+    item.appendChild(actions);
+    list.appendChild(item);
+  });
+  showOverlay(document.getElementById("story-select"));
+}
+function closeStorySelect() {
+  hideOverlay(document.getElementById("story-select"));
+}
+function startRoute(route) {
+  clearSave();
+  Engine.sceneId = route.startScene;
+  Engine.lineIndex = 0;
+  Engine.flags = {};
+  Engine.seenScenes = new Set();
+  closeStorySelect();
+  enterGame();
 }
 
 /* Event wiring */
@@ -442,16 +580,25 @@ document.addEventListener("DOMContentLoaded", () => {
   continueBtn.addEventListener("click", continueGame);
   newGameBtn.addEventListener("click", startNewGame);
 
+  document.getElementById("storyselect-btn")?.addEventListener("click", openStorySelect);
+  document.getElementById("storyselect-close")?.addEventListener("click", closeStorySelect);
+
+  themeToggleBtn?.addEventListener("click", () => {
+    applyTheme(Engine.theme === "light" ? "dark" : "light");
+    saveSettings();
+  });
+
   muteBtn.addEventListener("click", () => {
     bgm.muted = !bgm.muted;
     updateMuteIcon();
     saveSettings();
   });
 
+  setupParallax();
+
   devToggleBtn.addEventListener("click", () => toggleDevConsole());
   devConsoleClose.addEventListener("click", () => toggleDevConsole(false));
   devSkipToEnd.addEventListener("click", () => {
-    // Simple demo hook: jump to end line of current scene
     const s = Scenes[Engine.sceneId || "scene1"];
     Engine.sceneId = s.id;
     Engine.lineIndex = s.lines.length - 1;
@@ -461,8 +608,7 @@ document.addEventListener("DOMContentLoaded", () => {
     renderDevState();
   });
 
-  // Dev console: jump buttons
-  $$("#dev-console .dev-actions button[data-jump]").forEach((btn) => {
+  $("#dev-console .dev-actions button[data-jump]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const target = btn.getAttribute("data-jump");
       if (Scenes[target]) {
